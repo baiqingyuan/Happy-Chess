@@ -16,7 +16,7 @@
    然后访问 `http://localhost:8787/`。
 
 ## 在线版
-[WorkBuddy Sites](https://qile-chess.app.workbuddy.host/)
+[Oline Chess Site](https://qile-chess.app.workbuddy.host/)
 
 ## 文件
 - `index.html` — 游戏全部内容（HTML / CSS / JS 全部内联）。
