@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0d1022">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
 <title>棋乐 · 离线五棋</title>
 <style>
   :root{
@@ -77,13 +80,22 @@
   }
   #controls button:hover{border-color:var(--gold); color:var(--gold);}
   #controls button.on{border-color:var(--gold); color:var(--gold); background:rgba(232,176,75,.12);}
+  #logbox{width:min(92vw,640px); margin-top:12px; border:1px solid var(--line); border-radius:12px;
+    background:var(--card); overflow:hidden;}
+  #logbox summary{cursor:pointer; padding:8px 14px; font-size:13px; letter-spacing:2px; color:var(--dim); user-select:none;}
+  #logbox ol{margin:0; padding:6px 16px 12px; max-height:200px; overflow-y:auto;
+    display:grid; grid-template-columns:1fr 1fr 1fr; gap:2px 10px; font-size:13px; list-style:none;}
+  #logbox li{color:var(--ink); white-space:nowrap;}
+  #logbox li b{color:var(--dim); font-weight:400; margin-right:4px; font-size:11px;}
   footer{margin-top:18px; color:rgba(255,255,255,.25); font-size:11px; letter-spacing:2px; text-align:center;}
 </style>
 </head>
 <body>
 <header>
   <h1>棋 乐</h1>
-  <p class="sub">离线 · 五种棋 · 双人对弈</p>
+  <p class="sub">离线 · 五种棋 · 人机/双人</p>
+  <button id="mute" title="音效开关" style="position:fixed;top:10px;right:12px;z-index:9;background:var(--card);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:6px 10px;font-size:16px;cursor:pointer;">🔊</button>
+  <button id="fs" title="全屏" style="position:fixed;top:10px;right:56px;z-index:9;background:var(--card);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:6px 10px;font-size:16px;cursor:pointer;">⛶</button>
 </header>
 <nav id="tabs"></nav>
 <div id="statusbar"><span id="status"></span></div>
@@ -93,7 +105,8 @@
   <div id="promo" class="hidden"></div>
 </div>
 <div id="controls"></div>
-<footer>单文件 · 无网络 · 断电也能玩（来电之后）</footer>
+<details id="logbox" open><summary>📜 着法记录</summary><ol id="movelog"></ol></details>
+<footer>棋乐 v0.6.4 · 单文件 · 无网络 · 断电也能玩（来电之后）</footer>
 
 <script>
 (function(){
@@ -105,8 +118,8 @@ let dpr = 1, cssW = 0, cssH = 0;
 
 function fitCanvas(g){
   const wrap = $("#boardwrap");
-  const availW = Math.min(wrap.parentElement.clientWidth, 640);
-  const availH = Math.max(300, window.innerHeight - 300);
+  const availW = Math.min(wrap.parentElement.clientWidth, 940);
+  const availH = Math.max(340, window.innerHeight - 240);
   const asp = g.asp || 1;
   let w = availW, h = w / asp;
   if(h > availH){ h = availH; w = h * asp; }
@@ -140,6 +153,28 @@ function flashStatus(msg){
 
 /* ============================== 国际象棋 ============================== */
 const C_GLYPH = {K:"♚",Q:"♛",R:"♜",B:"♝",N:"♞",P:"♟"};
+const CF="abcdefgh";
+function chessMoveText(st, m){
+  const p=st.b[m.fr][m.fc]; if(!p) return "??";
+  const cap=!!st.b[m.tr][m.tc] || m.flag==="ep";
+  let s;
+  if(m.flag==="ck") s="O-O";
+  else if(m.flag==="cq") s="O-O-O";
+  else if(p[1]==="P") s=(cap?CF[m.fc]+"x":"")+CF[m.tc]+(8-m.tr)+(m.flag==="promo"?"="+(m.promo||"Q"):"");
+  else s=p[1]+(cap?CF[m.fc]+"x":"")+CF[m.tc]+(8-m.tr);
+  return s;
+}
+function logPly(log, t){
+  const no=Math.floor(log.length/2)+1;
+  log.push({n:no, w:log.length%2===0, t});
+}
+function renderLog(){
+  const ol=$("#movelog"); if(!ol) return;
+  const log=current.log||[];
+  ol.innerHTML=log.map(e=>"<li><b>"+e.n+(e.w?".":"…")+"</b>"+e.t+"</li>").join("")||"<li style='color:var(--dim)'>— 尚无着法 —</li>";
+  ol.scrollTop=ol.scrollHeight;
+}
+const GO_FILES="ABCDEFGHJKLMNOPQRST";
 const ORTH=[[1,0],[-1,0],[0,1],[0,-1]], DIAG=[[1,1],[1,-1],[-1,1],[-1,-1]];
 const KN8=[[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]];
 const K8=ORTH.concat(DIAG);
@@ -221,7 +256,7 @@ function chessApply(st,m){
   if(m.flag==="ep") b[m.fr][m.tc]=null;
   if(m.flag==="ck"){ b[m.tr][5]=col+"R"; b[m.tr][7]=null; }
   if(m.flag==="cq"){ b[m.tr][3]=col+"R"; b[m.tr][0]=null; }
-  b[m.tr][m.tc]= m.flag==="promo" ? col+m.promo : p;
+  b[m.tr][m.tc]= m.flag==="promo" ? col+(m.promo||"Q") : p;
   const n={b, turn: st.turn==="w"?"b":"w", cast:Object.assign({},st.cast), ep:null, half:st.half+1};
   if(p[1]==="K"){ if(col==="w"){n.cast.wK=n.cast.wQ=false;} else {n.cast.bK=n.cast.bQ=false;} }
   if(p[1]==="R"){ const home=col==="w"?7:0;
@@ -247,17 +282,128 @@ function chessAllLegal(st){
   }
   return res;
 }
+function chessBare(st){
+  let wMinor=0,bMinor=0;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=st.b[r][c]; if(!p) continue;
+    if(p[1]==="P"||p[1]==="R"||p[1]==="Q") return false;
+    if(p[1]==="N"||p[1]==="B"){ if(p[0]==="w") wMinor++; else bMinor++; }
+  }
+  return wMinor<=1 && bMinor<=1;
+}
+function chessKey(st){
+  return st.b.flat().join("")+st.turn+JSON.stringify(st.cast)+(st.ep?st.ep.r+","+st.ep.c:"");
+}
 
+const C_VAL={P:100,N:320,B:330,R:500,Q:900,K:0};
+function chessEvalST(st){
+  let s=0;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=st.b[r][c]; if(!p) continue;
+    let v=C_VAL[p[1]];
+    const ctr=3.5-Math.max(Math.abs(r-3.5),Math.abs(c-3.5));
+    if(p[1]==="N"||p[1]==="B") v+=ctr*6;
+    if(p[1]==="P") v+=(p[0]==="w"?6-r:r-1)*4;
+    if(p[1]==="K") v+=ctr*2;
+    s += (p[0]===st.turn? v : -v);
+  }
+  return s + Math.random()*6-3;
+}
+const SEARCH_ABORT={};
+let _nodes=0, _deadline=0;
+function chessQuiesce(st, alpha, beta, qd){
+  const stand=chessEvalST(st);
+  if(qd<=0 || stand>=beta) return stand;
+  if(stand>alpha) alpha=stand;
+  const moves=chessAllLegal(st).filter(m=>st.b[m.tr][m.tc]);
+  moves.sort((a,b)=>(st.b[b.tr][b.tc]?C_VAL[st.b[b.tr][b.tc][1]]:0)-(st.b[a.tr][a.tc]?C_VAL[st.b[a.tr][a.tc][1]]:0));
+  for(const m of moves){
+    const v=-chessQuiesce(chessApply(st,m), -beta, -alpha, qd-1);
+    if(v>=beta) return v;
+    if(v>alpha) alpha=v;
+  }
+  return alpha;
+}
+function chessNegamax(st,depth,alpha,beta){
+  if(++_nodes>=2048){ _nodes=0; if(Date.now()>_deadline) throw SEARCH_ABORT; }
+  if(depth<=0) return chessQuiesce(st, alpha, beta, 4);
+  const moves=chessAllLegal(st);
+  if(!moves.length) return inCheck(st,st.turn)? -100000-depth*1000 : 0;
+  moves.sort((a,b)=>(st.b[b.tr][b.tc]?C_VAL[st.b[b.tr][b.tc][1]]:0)-(st.b[a.tr][a.tc]?C_VAL[st.b[a.tr][a.tc][1]]:0));
+  let best=-Infinity;
+  for(const m of moves){
+    const v=-chessNegamax(chessApply(st,m), depth-1, -beta, -alpha);
+    if(v>best) best=v;
+    if(v>alpha) alpha=v;
+    if(alpha>=beta) break;
+  }
+  return best;
+}
+function xAllMoves(st){
+  const res=[];
+  for(let r=0;r<10;r++)for(let c=0;c<9;c++){
+    const p=st.b[r][c];
+    if(p&&p[0]===st.turn) for(const m of xLegal(st.b,r,c)) res.push({fr:r,fc:c,tr:m.r,tc:m.c});
+  }
+  return res;
+}
+const X_VAL={R:600,H:270,C:285,P:35,A:30,E:30,K:100000};
+function xEvalST(st){
+  let s=0;
+  for(let r=0;r<10;r++)for(let c=0;c<9;c++){
+    const p=st.b[r][c]; if(!p) continue;
+    let v=X_VAL[p[1]];
+    if(p[1]==="P") v += (p[0]==="r" ? (r<=4?25:0) : (r>=5?25:0));
+    if(p[1]==="H"||p[1]==="C") v += (c>=3&&c<=5?8:0);
+    s += (p[0]===st.turn? v : -v);
+  }
+  return s + Math.random()*6-3;
+}
+function xQuiesce(st, alpha, beta, qd){
+  const stand=xEvalST(st);
+  if(qd<=0 || stand>=beta) return stand;
+  if(stand>alpha) alpha=stand;
+  const moves=xAllMoves(st).filter(m=>st.b[m.tr][m.tc]);
+  moves.sort((a,b)=>(st.b[b.tr][b.tc]?X_VAL[st.b[b.tr][b.tc][1]]:0)-(st.b[a.tr][a.tc]?X_VAL[st.b[a.tr][a.tc][1]]:0));
+  for(const m of moves){
+    const nb=st.b.map(row=>row.slice());
+    nb[m.tr][m.tc]=nb[m.fr][m.fc]; nb[m.fr][m.fc]=null;
+    const v=-xQuiesce({b:nb, turn: st.turn==="r"?"b":"r"}, -beta, -alpha, qd-1);
+    if(v>=beta) return v;
+    if(v>alpha) alpha=v;
+  }
+  return alpha;
+}
+function xNegamax(st,depth,alpha,beta){
+  if(++_nodes>=2048){ _nodes=0; if(Date.now()>_deadline) throw SEARCH_ABORT; }
+  if(depth<=0) return xQuiesce(st, alpha, beta, 2);
+  const moves=xAllMoves(st);
+  if(!moves.length) return -100000-depth*1000;
+  moves.sort((a,b)=>(st.b[b.tr][b.tc]?X_VAL[st.b[b.tr][b.tc][1]]:0)-(st.b[a.tr][a.tc]?X_VAL[st.b[a.tr][a.tc][1]]:0));
+  let best=-Infinity;
+  for(const m of moves){
+    const nb=st.b.map(row=>row.slice());
+    nb[m.tr][m.tc]=nb[m.fr][m.fc]; nb[m.fr][m.fc]=null;
+    const n={b:nb, turn: st.turn==="r"?"b":"r"};
+    const v=-xNegamax(n, depth-1, -beta, -alpha);
+    if(v>best) best=v;
+    if(v>alpha) alpha=v;
+    if(alpha>=beta) break;
+  }
+  return best;
+}
 function ChessGame(){
   const G = {
     id:"chess", name:"国际象棋", icon:"♘", asp:1, dragMoves:true,
     hint:"点击己方棋子选择，再点目标格走子 · 支持王车易位 / 吃过路兵 / 兵升变 / 50步和棋",
     st:null, sel:null, last:null, over:null, pending:null,
-    newGame(){ this.st=chessInit(); this.sel=null; this.last=null; this.over=null; this.pending=null; },
-    snap(){ return JSON.stringify({st:this.st, last:this.last, over:this.over}); },
-    restore(s){ const o=JSON.parse(s); this.st=o.st; this.last=o.last; this.over=o.over; },
+    newGame(){ this.st=chessInit(); this.sel=null; this.last=null; this.over=null; this.pending=null; this.log=[]; this.hintMove=null; this.reps={}; this.reps[chessKey(this.st)]=1; },
+    snap(){ return JSON.stringify({st:this.st, last:this.last, over:this.over, log:this.log, reps:this.reps}); },
+    restore(s){ const o=JSON.parse(s); this.st=o.st; this.last=o.last; this.over=o.over; this.log=o.log||[]; this.reps=o.reps||{}; },
     controls(){ return [
-      {label:"↩ 悔棋", fn:()=>{ if(this.hist.length){ this.restore(this.hist.pop()); this.sel=null; this.pending=null; render(G); updStatus(); } }},
+      {label:this.vsAI?"👥 双人对战":"🤖 人机对战(执白)", fn:()=>{ this.vsAI=!this.vsAI; updStatus(); }},
+      {label:"⚡ AI:"+["入门","进阶","大师"][this.aiLevel==null?1:this.aiLevel], fn:()=>{ this.aiLevel=((this.aiLevel==null?1:this.aiLevel)+1)%3; }},
+      {label:"↩ 悔棋", fn:()=>{ if(!this.hist.length) return; this.restore(this.hist.pop()); if(this.vsAI&&this.turnOf()===this.aiColor&&this.hist.length) this.restore(this.hist.pop()); this.sel=null; this.pending=null; render(G); updStatus(); }},
       {label:"⟳ 重新开始", fn:()=>{ this.newGame(); render(G); updStatus(); }},
     ];},
     tapPx(x,y,W,H){
@@ -266,6 +412,7 @@ function ChessGame(){
       if(!inB(r,c)) return;
       const st=this.st, p=st.b[r][c];
       if(this.sel){
+        if(this.sel.r===r&&this.sel.c===c){ this.sel=null; this.legal=null; render(G); updStatus(); return; }
         const mv=this.legal.find(m=>m.tr===r&&m.tc===c);
         if(mv){
           if(mv.flag==="promo"){ this.pending=mv; showPromo(col=>this.doPromo(col)); return; }
@@ -282,13 +429,22 @@ function ChessGame(){
       mv.promo=pc; this.commit(mv); },
     commit(mv){
       this.hist.push(this.snap());
+      const pt=chessMoveText(this.st,mv);
+      const capd=!!this.st.b[mv.tr][mv.tc]||mv.flag==="ep";
       this.last={fr:mv.fr,fc:mv.fc,tr:mv.tr,tc:mv.tc};
       this.st=chessApply(this.st,mv);
-      this.sel=null; this.legal=null;
+      this.sel=null; this.legal=null; this.hintMove=null;
+      const posKey=chessKey(this.st);
+      this.reps[posKey]=(this.reps[posKey]||0)+1;
       const moves=chessAllLegal(this.st);
       const chk=inCheck(this.st,this.st.turn);
       if(moves.length===0) this.over = chk ? (this.st.turn==="w"?"黑方胜 · 将死":"白方胜 · 将死") : "和棋 · 逼和(无子可动)";
       else if(this.st.half>=100) this.over="和棋 · 50回合未吃子未动兵";
+      else if(this.reps[posKey]>=3) this.over="和棋 · 三次重复局面";
+      else if(chessBare(this.st)) this.over="和棋 · 双方子力不足";
+      logPly(this.log, pt+(this.over&&this.over.includes("胜")?"#":chk?"+":""));
+      sfx(capd?"capture":"move");
+      if(this.over&&this.over.includes("胜")) sfx("win"); else if(chk) sfx("check");
       render(G); updStatus();
     },
     status(){
@@ -297,6 +453,43 @@ function ChessGame(){
       return inCheck(this.st,this.st.turn) ? t+"行棋 · 被将军！" : t+"行棋";
     },
     dotColor(){ return this.over?null:(this.st.turn==="w"?"#f5f2e8":"#3a3a3a"); },
+    aiColor:"b", aiLevel:1,
+    turnOf(){ return this.st.turn; },
+    think(){
+      const lvl=this.aiLevel==null?1:this.aiLevel;
+      const moves=chessAllLegal(this.st);
+      if(!moves.length) return null;
+      moves.forEach(m=>{ if(m.flag==="promo") m.promo="Q"; });
+      moves.sort((a,b)=>(this.st.b[b.tr][b.tc]?C_VAL[this.st.b[b.tr][b.tc][1]]:0)-(this.st.b[a.tr][a.tc]?C_VAL[this.st.b[a.tr][a.tc][1]]:0));
+      const maxDepth=[1,3,5][lvl], budget=[200,900,4500][lvl];
+      let best=moves[0];
+      _deadline=Date.now()+budget*1.6;
+      for(let d=1; d<=maxDepth; d++){
+        const t0=Date.now();
+        let lb=null, ls=-Infinity, alpha=-Infinity, aborted=false, i=0;
+        const scores=[];
+        try{
+          for(const m of moves){
+            const v=-chessNegamax(chessApply(this.st,m), d-1, -Infinity, -alpha);
+            scores.push({m,v});
+            if(v>ls){ ls=v; lb=m; }
+            if(v>alpha) alpha=v;
+            if((++i&3)===0 && Date.now()-t0>budget*1.2){ aborted=true; break; }
+          }
+        }catch(e){ if(e!==SEARCH_ABORT) throw e; aborted=true; }
+        if(!aborted && lb){
+          best=lb;
+          const j=moves.indexOf(lb); moves.splice(j,1); moves.unshift(lb);
+        }
+        if(lvl===0){
+          const cands=scores.filter(s=>s.v>=ls-130);
+          return cands[Math.floor(Math.random()*cands.length)].m;
+        }
+        if(aborted || Date.now()-t0>budget) break;
+      }
+      return best;
+    },
+    aiMove(){ const m=this.think(); if(m) this.commit(m); },
     render(c,W,H){
       const cell=W/8;
       for(let r=0;r<8;r++)for(let cc=0;cc<8;cc++){
@@ -320,11 +513,15 @@ function ChessGame(){
         if(this.legal) for(const m of this.legal){
           const x=m.tc*cell+cell/2, y=m.tr*cell+cell/2;
           if(this.st.b[m.tr][m.tc]||m.flag==="ep"){
-            c.strokeStyle="rgba(220,60,60,.85)"; c.lineWidth=cell*0.06;
-            c.beginPath(); c.arc(x,y,cell*0.42,0,Math.PI*2); c.stroke();
+            c.strokeStyle="rgba(225,55,55,.9)"; c.lineWidth=cell*0.075;
+            c.beginPath(); c.arc(x,y,cell*0.44,0,Math.PI*2); c.stroke();
+            c.fillStyle="rgba(225,55,55,.18)";
+            c.beginPath(); c.arc(x,y,cell*0.44,0,Math.PI*2); c.fill();
           } else {
-            c.fillStyle="rgba(40,40,40,.35)";
-            c.beginPath(); c.arc(x,y,cell*0.13,0,Math.PI*2); c.fill();
+            c.fillStyle="rgba(60,160,90,.30)";
+            c.fillRect(m.tc*cell+2, m.tr*cell+2, cell-4, cell-4);
+            c.fillStyle="rgba(30,110,60,.85)";
+            c.beginPath(); c.arc(x,y,cell*0.17,0,Math.PI*2); c.fill();
           }
         }
       }
@@ -341,6 +538,12 @@ function ChessGame(){
         c.strokeStyle="rgba(230,60,60,.9)"; c.lineWidth=cell*0.07;
         c.strokeRect(k.c*cell+2,k.r*cell+2,cell-4,cell-4);
       }
+      if(this.hintMove){
+        c.strokeStyle="rgba(255,200,60,.95)"; c.lineWidth=cell*0.06;
+        for(const [rr,cc] of [[this.hintMove.fr,this.hintMove.fc],[this.hintMove.tr,this.hintMove.tc]]){
+          c.beginPath(); c.arc(cc*cell+cell/2, rr*cell+cell/2, cell*0.46,0,Math.PI*2); c.stroke();
+        }
+      }
     }
   };
   G.newGame(); G.hist=[];
@@ -352,6 +555,21 @@ const X_GLYPH={r:"帥仕相俥傌炮兵", b:"將士象車馬砲卒"};
 const X_GLYPH_MAP={};
 (function(){ const rk="KAEHRCP".split(""), rr="帥仕相俥傌炮兵".split(""), br="將士象車馬砲卒".split("");
   rk.forEach((k,i)=>{ X_GLYPH_MAP["r"+k]=rr[i]; X_GLYPH_MAP["b"+k]=br[i]; }); })();
+const X_CN="一二三四五六七八九";
+function xMoveText(st, m){
+  const p=st.b[m.fr][m.fc]; if(!p) return "??";
+  const col=p[0];
+  const name=X_GLYPH_MAP[p];
+  const red=col==="r";
+  const colName=c=> red ? X_CN[8-c] : String(c+1);
+  const dr=m.tr-m.fr;
+  const fwd= red ? dr<0 : dr>0;
+  let verb, tail;
+  if(m.tc===m.fc){ verb=fwd?"进":"退"; const s=Math.abs(dr); tail= red? X_CN[s-1] : String(s); }
+  else if(dr===0){ verb="平"; tail=colName(m.tc); }
+  else { verb=fwd?"进":"退"; tail=colName(m.tc); }
+  return name+colName(m.fc)+verb+tail;
+}
 
 function xiangInit(){
   const b=Array.from({length:10},()=>Array(9).fill(null));
@@ -427,11 +645,14 @@ function XiangGame(){
     id:"xiang", name:"中国象棋", icon:"馬", asp:10/11, dragMoves:true,
     hint:"红先黑后 · 马蹩腿 / 象塞眼 / 将帅不对脸 · 困毙亦判负",
     st:null, sel:null, last:null, over:null,
-    newGame(){ this.st=xiangInit(); this.sel=null; this.last=null; this.over=null; },
-    snap(){ return JSON.stringify({st:this.st,last:this.last,over:this.over}); },
-    restore(s){ const o=JSON.parse(s); this.st=o.st; this.last=o.last; this.over=o.over; },
+    newGame(){ this.st=xiangInit(); this.sel=null; this.last=null; this.over=null; this.log=[]; this.hintMove=null; this.reps={}; this.chkStreak=0;
+      this.reps[this.st.b.flat().join("")+this.st.turn]=1; },
+    snap(){ return JSON.stringify({st:this.st,last:this.last,over:this.over,log:this.log,reps:this.reps,chkStreak:this.chkStreak}); },
+    restore(s){ const o=JSON.parse(s); this.st=o.st; this.last=o.last; this.over=o.over; this.log=o.log||[]; this.reps=o.reps||{}; this.chkStreak=o.chkStreak||0; },
     controls(){ return [
-      {label:"↩ 悔棋", fn:()=>{ if(this.hist.length){ this.restore(this.hist.pop()); this.sel=null; render(G); updStatus(); } }},
+      {label:this.vsAI?"👥 双人对战":"🤖 人机对战(执红)", fn:()=>{ this.vsAI=!this.vsAI; updStatus(); }},
+      {label:"⚡ AI:"+["入门","进阶","大师"][this.aiLevel==null?1:this.aiLevel], fn:()=>{ this.aiLevel=((this.aiLevel==null?1:this.aiLevel)+1)%3; }},
+      {label:"↩ 悔棋", fn:()=>{ if(!this.hist.length) return; this.restore(this.hist.pop()); if(this.vsAI&&this.turnOf()===this.aiColor&&this.hist.length) this.restore(this.hist.pop()); this.sel=null; render(G); updStatus(); }},
       {label:"⟳ 重新开始", fn:()=>{ this.newGame(); render(G); updStatus(); }},
     ];},
     tapPx(x,y,W,H){
@@ -443,6 +664,7 @@ function XiangGame(){
       if(dx*dx+dy*dy > cell*cell*0.36) return;
       const st=this.st, p=st.b[r][c];
       if(this.sel){
+        if(this.sel.r===r&&this.sel.c===c){ this.sel=null; this.legal=null; render(G); updStatus(); return; }
         const mv=this.legal.find(m=>m.r===r&&m.c===c);
         if(mv){ this.commit({fr:this.sel.r,fc:this.sel.c,tr:r,tc:c}); return; }
         if(p&&p[0]===st.turn){ this.sel={r,c}; this.legal=xLegal(st.b,r,c); }
@@ -455,16 +677,32 @@ function XiangGame(){
     commit(mv){
       this.hist.push(this.snap());
       const st=this.st;
+      const pt=xMoveText(st, mv, this.log);
+      const mover=st.turn;
+      const capd=!!st.b[mv.tr][mv.tc];
       st.b[mv.tr][mv.tc]=st.b[mv.fr][mv.fc]; st.b[mv.fr][mv.fc]=null;
       st.turn = st.turn==="r"?"b":"r";
-      this.last=mv; this.sel=null; this.legal=null;
+      this.last=mv; this.sel=null; this.legal=null; this.hintMove=null;
+      const posKey=st.b.flat().join("")+st.turn;
+      this.reps[posKey]=(this.reps[posKey]||0)+1;
+      const g=this.xFindK(mover);
+      const chk=this.status().includes("被将军");
+      this.chkStreak = chk ? this.chkStreak+1 : 0;
       let any=false;
       for(let r=0;r<10&&!any;r++)for(let c=0;c<9&&!any;c++){
         const p=st.b[r][c]; if(p&&p[0]===st.turn&&xLegal(st.b,r,c).length) any=true;
       }
       if(!any) this.over=(st.turn==="r"?"黑方胜 · 红方":"红方胜 · 黑方")+"被将死/困毙";
+      else if(this.reps[posKey]>=3){
+        if(chk) this.over=(mover==="r"?"红方":"黑方")+"长将判负，"+(mover==="r"?"黑方胜":"红方胜");
+        else this.over="和棋 · 三次重复局面";
+      }
+      logPly(this.log, pt+(this.over&&this.over.includes("胜")?"#":""));
+      sfx(capd?"capture":"move");
+      if(this.over&&this.over.includes("胜")) sfx("win"); else if(chk) sfx("check");
       render(G); updStatus();
     },
+    xFindK(col){ return xFind(this.st.b, col, "K"); },
     status(){
       if(this.over) return this.over;
       const t=this.st.turn==="r"?"红方":"黑方";
@@ -476,6 +714,44 @@ function XiangGame(){
       return chk ? t+"行棋 · 被将军！" : t+"行棋";
     },
     dotColor(){ return this.over?null:(this.st.turn==="r"?"#e05555":"#444a55"); },
+    aiColor:"b", aiLevel:1,
+    turnOf(){ return this.st.turn; },
+    think(){
+      const lvl=this.aiLevel==null?1:this.aiLevel;
+      const moves=xAllMoves(this.st);
+      if(!moves.length) return null;
+      moves.sort((a,b)=>(this.st.b[b.tr][b.tc]?X_VAL[this.st.b[b.tr][b.tc][1]]:0)-(this.st.b[a.tr][a.tc]?X_VAL[this.st.b[a.tr][a.tc][1]]:0));
+      const maxDepth=[1,3,4][lvl], budget=[200,800,4000][lvl];
+      let best=moves[0];
+      _deadline=Date.now()+budget*1.6;
+      for(let d=1; d<=maxDepth; d++){
+        const t0=Date.now();
+        let lb=null, ls=-Infinity, alpha=-Infinity, aborted=false, i=0;
+        const scores=[];
+        try{
+          for(const m of moves){
+            const nb=this.st.b.map(row=>row.slice());
+            nb[m.tr][m.tc]=nb[m.fr][m.fc]; nb[m.fr][m.fc]=null;
+            const v=-xNegamax({b:nb, turn:this.st.turn==="r"?"b":"r"}, d-1, -Infinity, -alpha);
+            scores.push({m,v});
+            if(v>ls){ ls=v; lb=m; }
+            if(v>alpha) alpha=v;
+            if((++i&3)===0 && Date.now()-t0>budget*1.2){ aborted=true; break; }
+          }
+        }catch(e){ if(e!==SEARCH_ABORT) throw e; aborted=true; }
+        if(!aborted && lb){
+          best=lb;
+          const j=moves.indexOf(lb); moves.splice(j,1); moves.unshift(lb);
+        }
+        if(lvl===0){
+          const cands=scores.filter(s=>s.v>=ls-130);
+          return cands[Math.floor(Math.random()*cands.length)].m;
+        }
+        if(aborted || Date.now()-t0>budget) break;
+      }
+      return best;
+    },
+    aiMove(){ const m=this.think(); if(m) this.commit(m); },
     geo(W,H){ const cell=Math.min(W/10, H/11); return {cell, ox:(W-8*cell)/2, oy:(H-9*cell)/2}; },
     render(c,W,H){
       const {cell,ox,oy}=this.geo(W,H);
@@ -522,8 +798,18 @@ function XiangGame(){
         c.fillStyle="rgba(90,170,255,.5)";
         c.beginPath(); c.arc(X(this.sel.c),Y(this.sel.r),cell*0.46,0,Math.PI*2); c.fill();
         if(this.legal) for(const m of this.legal){
-          c.fillStyle=this.st.b[m.r][m.c]?"rgba(220,60,60,.8)":"rgba(40,90,40,.55)";
-          c.beginPath(); c.arc(X(m.c),Y(m.r),cell*0.12,0,Math.PI*2); c.fill();
+          const has=this.st.b[m.r][m.c];
+          if(has){
+            c.strokeStyle="rgba(225,55,55,.9)"; c.lineWidth=cell*0.06;
+            c.beginPath(); c.arc(X(m.c),Y(m.r),cell*0.44,0,Math.PI*2); c.stroke();
+            c.fillStyle="rgba(225,55,55,.15)";
+            c.beginPath(); c.arc(X(m.c),Y(m.r),cell*0.44,0,Math.PI*2); c.fill();
+          } else {
+            c.fillStyle="rgba(60,160,90,.35)";
+            c.beginPath(); c.arc(X(m.c),Y(m.r),cell*0.30,0,Math.PI*2); c.fill();
+            c.fillStyle="rgba(30,110,60,.9)";
+            c.beginPath(); c.arc(X(m.c),Y(m.r),cell*0.13,0,Math.PI*2); c.fill();
+          }
         }
       }
       // 棋子
@@ -544,6 +830,12 @@ function XiangGame(){
         c.fillText(X_GLYPH_MAP[p], x, y+rad*0.06);
         c.restore();
       }
+      if(this.hintMove){
+        c.strokeStyle="rgba(255,200,60,.95)"; c.lineWidth=cell*0.055;
+        for(const [rr,cc] of [[this.hintMove.fr,this.hintMove.fc],[this.hintMove.tr,this.hintMove.tc]]){
+          c.beginPath(); c.arc(X(cc),Y(rr),cell*0.48,0,Math.PI*2); c.stroke();
+        }
+      }
     }
   };
   G.newGame(); G.hist=[];
@@ -557,11 +849,13 @@ function GomokuGame(){
     id:"gomoku", name:"五子棋", icon:"⚫", asp:1,
     hint:"黑先白后 · 横竖斜五子连线即胜（无禁手）",
     n:N, st:null, over:null, winLine:null,
-    newGame(){ this.st=Array.from({length:N},()=>Array(N).fill(null)); this.turn="b"; this.over=null; this.winLine=null; },
-    snap(){ return JSON.stringify({st:this.st,turn:this.turn,over:this.over,winLine:this.winLine}); },
-    restore(s){ const o=JSON.parse(s); this.st=o.st; this.turn=o.turn; this.over=o.over; this.winLine=o.winLine; },
+    newGame(){ this.st=Array.from({length:N},()=>Array(N).fill(null)); this.turn="b"; this.over=null; this.winLine=null; this.log=[]; this.hintMove=null; },
+    snap(){ return JSON.stringify({st:this.st,turn:this.turn,over:this.over,winLine:this.winLine,log:this.log}); },
+    restore(s){ const o=JSON.parse(s); this.st=o.st; this.turn=o.turn; this.over=o.over; this.winLine=o.winLine; this.log=o.log||[]; },
     controls(){ return [
-      {label:"↩ 悔棋", fn:()=>{ if(this.hist.length){ this.restore(this.hist.pop()); render(G); updStatus(); } }},
+      {label:this.vsAI?"👥 双人对战":"🤖 人机对战(执黑)", fn:()=>{ this.vsAI=!this.vsAI; updStatus(); }},
+      {label:"⚡ AI:"+["入门","进阶","大师"][this.aiLevel==null?1:this.aiLevel], fn:()=>{ this.aiLevel=((this.aiLevel==null?1:this.aiLevel)+1)%3; }},
+      {label:"↩ 悔棋", fn:()=>{ if(!this.hist.length) return; this.restore(this.hist.pop()); if(this.vsAI&&this.turnOf()===this.aiColor&&this.hist.length) this.restore(this.hist.pop()); render(G); updStatus(); }},
       {label:"⟳ 重新开始", fn:()=>{ this.newGame(); render(G); updStatus(); }},
     ];},
     tapPx(x,y,W,H){
@@ -570,13 +864,73 @@ function GomokuGame(){
       const c=Math.round((x-g.ox)/cell), r=Math.round((y-g.oy)/cell);
       if(r<0||r>=N||c<0||c>=N) return;
       if(this.st[r][c]) return;
-      this.hist.push(this.snap());
-      this.st[r][c]=this.turn;
-      const win=this.checkWin(r,c,this.turn);
-      if(win){ this.winLine=win; this.over=(this.turn==="b"?"黑方胜":"白方胜")+" · 五连！"; }
-      else if(this.st.every(row=>row.every(v=>v))) this.over="和棋 · 棋盘已满";
-      else this.turn=this.turn==="b"?"w":"b";
+      this.place(r,c);
       render(G); updStatus();
+    },
+    place(r,c){
+      this.hist.push(this.snap());
+      const col=this.turn;
+      this.st[r][c]=col;
+      this.hintMove=null;
+      const win=this.checkWin(r,c,col);
+      let t=(col==="b"?"黑 ":"白 ")+("abcdefghijklmno"[c])+(N-r);
+      if(win){ this.winLine=win; this.over=(col==="b"?"黑方胜":"白方胜")+" · 五连！"; t+=" ★"; }
+      else if(this.st.every(row=>row.every(v=>v))){ this.over="和棋 · 棋盘已满"; }
+      logPly(this.log, t);
+      sfx("move");
+      if(win) sfx("win");
+      if(!win) this.turn=col==="b"?"w":"b";
+    },
+    aiColor:"w", aiLevel:1,
+    turnOf(){ return this.turn; },
+    ptScore(b,r,c,col){
+      let tot=0;
+      for(const [dr,dc] of [[0,1],[1,0],[1,1],[1,-1]]){
+        let cnt=1, open=0;
+        let rr=r+dr, cc=c+dc;
+        while(rr>=0&&rr<N&&cc>=0&&cc<N&&b[rr][cc]===col){ cnt++; rr+=dr; cc+=dc; }
+        if(rr>=0&&rr<N&&cc>=0&&cc<N&&!b[rr][cc]) open++;
+        rr=r-dr; cc=c-dc;
+        while(rr>=0&&rr<N&&cc>=0&&cc<N&&b[rr][cc]===col){ cnt++; rr-=dr; cc-=dc; }
+        if(rr>=0&&rr<N&&cc>=0&&cc<N&&!b[rr][cc]) open++;
+        tot += cnt>=5?1e7 : cnt===4?(open===2?1e6:open===1?1e4:0) : cnt===3?(open===2?5e3:open===1?500:0) : cnt===2?(open===2?200:open===1?50:0) : (open===2?20:open===1?4:0);
+      }
+      return tot;
+    },
+    aiMove(){ const mv=this.think(); if(mv) this.place(mv.r, mv.c); },
+    think(){
+      const lvl=this.aiLevel==null?1:this.aiLevel;
+      const b=this.st, me=this.turn, op=me==="b"?"w":"b";
+      const cands=[];
+      for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+        if(b[r][c]) continue;
+        const s=Math.max(this.ptScore(b,r,c,me)*1.05, this.ptScore(b,r,c,op));
+        cands.push({r,c,s});
+      }
+      cands.sort((a,b2)=>b2.s-a.s);
+      if(!cands.length) return null;
+      if(lvl===0){
+        return cands[0].s>=1e6 ? cands[0] : cands[Math.floor(Math.random()*Math.min(4,cands.length))];
+      }
+      if(lvl===1) return cands[0];
+      let best=cands[0], bestV=-Infinity;
+      for(let i=0;i<Math.min(10,cands.length);i++){
+        const {r,c}=cands[i];
+        if(cands[i].s>=1e7) return cands[i];
+        b[r][c]=me;
+        let oppMax=0, myMax=0;
+        for(let rr=0;rr<N;rr++)for(let cc=0;cc<N;cc++){
+          if(b[rr][cc]) continue;
+          const os=this.ptScore(b,rr,cc,op);
+          if(os>oppMax) oppMax=os;
+          const ms=this.ptScore(b,rr,cc,me);
+          if(ms>myMax) myMax=ms;
+        }
+        b[r][c]=null;
+        const v=cands[i].s + myMax*0.4 - oppMax;
+        if(v>bestV){ bestV=v; best=cands[i]; }
+      }
+      return best;
     },
     checkWin(r,c,col){
       for(const [dr,dc] of [[0,1],[1,0],[1,1],[1,-1]]){
@@ -622,6 +976,10 @@ function GomokuGame(){
         c.beginPath(); c.arc(x,y,rad,0,Math.PI*2); c.fill();
         c.strokeStyle=p==="b"?"#000":"rgba(80,70,50,.6)"; c.lineWidth=1; c.stroke();
       }
+      if(this.hintMove){
+        c.strokeStyle="rgba(255,200,60,.95)"; c.lineWidth=cell*0.07;
+        c.beginPath(); c.arc(ox+this.hintMove.c*cell, oy+this.hintMove.r*cell, cell*0.48,0,Math.PI*2); c.stroke();
+      }
     }
   };
   G.newGame(); G.hist=[];
@@ -637,13 +995,15 @@ function GoGame(){
     get n(){ return n; },
     st:null, turn:"b", capB:0, capW:0, passes:0, posHist:[], scored:null, over:null,
     newGame(size){ if(size) n=size; this.st=Array.from({length:n},()=>Array(n).fill(null));
-      this.turn="b"; this.capB=0; this.capW=0; this.passes=0; this.posHist=[]; this.scored=null; this.over=null; },
-    snap(){ return JSON.stringify({st:this.st,turn:this.turn,capB:this.capB,capW:this.capW,passes:this.passes,posHist:this.posHist,scored:this.scored,over:this.over}); },
-    restore(s){ const o=JSON.parse(s); Object.assign(this,{st:o.st,turn:o.turn,capB:o.capB,capW:o.capW,passes:o.passes,posHist:o.posHist,scored:o.scored,over:o.over}); },
+      this.turn="b"; this.capB=0; this.capW=0; this.passes=0; this.posHist=[]; this.scored=null; this.over=null; this.log=[]; this.hintMove=null; },
+    snap(){ return JSON.stringify({n,st:this.st,turn:this.turn,capB:this.capB,capW:this.capW,passes:this.passes,posHist:this.posHist,scored:this.scored,over:this.over,log:this.log}); },
+    restore(s){ const o=JSON.parse(s); Object.assign(this,{st:o.st,turn:o.turn,capB:o.capB,capW:o.capW,passes:o.passes,posHist:o.posHist,scored:o.scored,over:o.over,log:o.log||[]}); if(o.n) n=o.n; },
     controls(){ return [
+      {label:this.vsAI?"👥 双人对战":"🤖 人机对战(执黑)", fn:()=>{ this.vsAI=!this.vsAI; updStatus(); }},
+      {label:"⚡ AI:"+["入门","进阶","大师"][this.aiLevel==null?1:this.aiLevel], fn:()=>{ this.aiLevel=((this.aiLevel==null?1:this.aiLevel)+1)%3; }},
       {label:"9路", key:9},{label:"13路", key:13},{label:"19路", key:19},
       {label:"⏸ 停一手", fn:()=>this.pass()},
-      {label:"↩ 悔棋", fn:()=>{ if(this.hist.length){ this.restore(this.hist.pop()); render(G); updStatus(); } }},
+      {label:"↩ 悔棋", fn:()=>{ if(!this.hist.length) return; this.restore(this.hist.pop()); if(this.vsAI&&this.turnOf()===this.aiColor&&this.hist.length) this.restore(this.hist.pop()); render(G); updStatus(); }},
       {label:"⟳ 重新开始", fn:()=>{ this.newGame(); render(G); updStatus(); }},
     ];},
     handleCtrl(item){
@@ -674,7 +1034,11 @@ function GoGame(){
       const g=this.geo(W,H), cell=g.cell;
       const c=Math.round((x-g.ox)/cell), r=Math.round((y-g.oy)/cell);
       if(r<0||r>=n||c<0||c>=n) return;
-      if(this.st[r][c]) return;
+      this.tryPlace(r,c);
+      render(G); updStatus();
+    },
+    tryPlace(r,c){
+      if(this.st[r][c]) return false;
       const nb=this.st.map(row=>row.slice());
       nb[r][c]=this.turn;
       const opp=this.turn==="b"?"w":"b";
@@ -688,20 +1052,98 @@ function GoGame(){
         }
       }
       const own=this.group(nb,r,c);
-      if(own.libs.size===0){ flashStatus("禁着点：自杀"); return; }
+      if(own.libs.size===0){ flashStatus("禁着点：自杀"); return false; }
       const pos=nb.flat().join("");
-      if(this.posHist.includes(pos)){ flashStatus("打劫 / 全局同形，不能立即回提"); return; }
+      if(this.posHist.includes(pos)){ flashStatus("打劫 / 全局同形，不能立即回提"); return false; }
       this.hist.push(this.snap());
       this.st=nb;
       if(this.turn==="b") this.capB+=caps; else this.capW+=caps;
       this.posHist.push(pos);
+      logPly(this.log, (this.turn==="b"?"黑 ":"白 ")+GO_FILES[c]+(n-r)+(caps?" ×"+caps:""));
+      this.hintMove=null;
+      sfx(caps?"capture":"move");
       this.turn=opp; this.passes=0;
-      render(G); updStatus();
+      return true;
+    },
+    aiColor:"w", aiLevel:1,
+    turnOf(){ return this.turn; },
+    aiMove(){ const mv=this.think(); if(mv) this.tryPlace(mv.r, mv.c); else this.pass(); },
+    think(){
+      const lvl=this.aiLevel==null?1:this.aiLevel;
+      const b=this.st, me=this.turn, op=me==="b"?"w":"b";
+      const cands=[];
+      for(let r=0;r<n;r++)for(let c=0;c<n;c++){
+        if(b[r][c]) continue;
+        const nb=b.map(row=>row.slice());
+        nb[r][c]=me;
+        let caps=0;
+        const done=new Set();
+        for(const [nr,nc] of this.neighbors(r,c)){
+          if(nb[nr][nc]===op&&!done.has(nr*n+nc)){
+            const g2=this.group(nb,nr,nc);
+            g2.stones.forEach(([a,b2])=>done.add(a*n+b2));
+            if(g2.libs.size===0){ caps+=g2.stones.length; g2.stones.forEach(([a,b2])=>nb[a][b2]=null); }
+          }
+        }
+        const own=this.group(nb,r,c);
+        if(own.libs.size===0) continue;
+        if(this.posHist.includes(nb.flat().join(""))) continue;
+        let s=caps*40 + Math.min(own.libs.size,4)*6;
+        if(own.libs.size===1) s-=28;
+        const seen=new Set();
+        for(const [nr,nc] of this.neighbors(r,c)){
+          if(nb[nr][nc]===op&&!seen.has(nr*n+nc)){
+            const g2=this.group(nb,nr,nc);
+            g2.stones.forEach(([a,b2])=>seen.add(a*n+b2));
+            if(g2.libs.size===1) s+=g2.stones.length*12;
+          }
+        }
+        const edge=Math.min(r,n-1-r,c,n-1-c);
+        s += edge===0?-14 : edge===1?6 : edge===2?10 : edge===3?6 : 0;
+        s += Math.random()*8;
+        cands.push({r,c,s,nb});
+      }
+      if(!cands.length) return null;
+      cands.sort((a,b2)=>b2.s-a.s);
+      if(lvl===0) return cands[Math.floor(Math.random()*Math.min(5,cands.length))];
+      if(lvl===1) return cands[0];
+      // 大师:预估对手最佳提子反击
+      let best=cands[0], bestV=-Infinity;
+      for(let i=0;i<Math.min(12,cands.length);i++){
+        const cd=cands[i];
+        let oppCap=0;
+        const near=new Set();
+        for(let r=0;r<n;r++)for(let c=0;c<n;c++){
+          if(!cd.nb[r][c]) continue;
+          for(const [nr,nc] of this.neighbors(r,c)) if(!cd.nb[nr][nc]) near.add(nr*n+nc);
+        }
+        for(const key of near){
+          const r=Math.floor(key/n), c=key%n;
+          const nb2=cd.nb.map(row=>row.slice());
+          nb2[r][c]=op;
+          let caps=0;
+          const done=new Set();
+          for(const [nr,nc] of this.neighbors(r,c)){
+            if(nb2[nr][nc]===me&&!done.has(nr*n+nc)){
+              const g2=this.group(nb2,nr,nc);
+              g2.stones.forEach(([a,b2])=>done.add(a*n+b2));
+              if(g2.libs.size===0){ caps+=g2.stones.length; g2.stones.forEach(([a,b2])=>nb2[a][b2]=null); }
+            }
+          }
+          const og=this.group(nb2,r,c);
+          if(og.libs.size===0) continue;
+          if(caps>oppCap) oppCap=caps;
+        }
+        const v=cd.s - oppCap*30;
+        if(v>bestV){ bestV=v; best=cd; }
+      }
+      return best ? {r:best.r, c:best.c} : null;
     },
     pass(){
       if(this.over||this.scored) return;
       this.hist.push(this.snap());
       this.passes++;
+      logPly(this.log, (this.turn==="b"?"黑":"白")+" 停一手");
       if(this.passes>=2){ this.score(); }
       else { this.turn=this.turn==="b"?"w":"b"; updStatus(); }
       render(G); updStatus();
@@ -777,6 +1219,10 @@ function GoGame(){
         c.textAlign="center";
         c.fillText("对 方 已 停 一 手", W/2, H-cell*0.4);
       }
+      if(this.hintMove){
+        c.strokeStyle="rgba(255,200,60,.95)"; c.lineWidth=cell*0.07;
+        c.beginPath(); c.arc(ox+this.hintMove.c*cell, oy+this.hintMove.r*cell, cell*0.48,0,Math.PI*2); c.stroke();
+      }
     }
   };
   G.newGame(19); G.hist=[];
@@ -793,12 +1239,14 @@ function ReversiGame(){
     newGame(){
       const b=Array.from({length:8},()=>Array(8).fill(null));
       b[3][3]="w"; b[3][4]="b"; b[4][3]="b"; b[4][4]="w";
-      this.st=b; this.turn="b"; this.over=null; this.last=null;
+      this.st=b; this.turn="b"; this.over=null; this.last=null; this.log=[]; this.hintMove=null;
     },
-    snap(){ return JSON.stringify({st:this.st,turn:this.turn,over:this.over,last:this.last}); },
-    restore(s){ const o=JSON.parse(s); Object.assign(this,{st:o.st,turn:o.turn,over:o.over,last:o.last}); },
+    snap(){ return JSON.stringify({st:this.st,turn:this.turn,over:this.over,last:this.last,log:this.log}); },
+    restore(s){ const o=JSON.parse(s); Object.assign(this,{st:o.st,turn:o.turn,over:o.over,last:o.last,log:o.log||[]}); },
     controls(){ return [
-      {label:"↩ 悔棋", fn:()=>{ if(this.hist.length){ this.restore(this.hist.pop()); render(G); updStatus(); } }},
+      {label:this.vsAI?"👥 双人对战":"🤖 人机对战(执黑)", fn:()=>{ this.vsAI=!this.vsAI; updStatus(); }},
+      {label:"⚡ AI:"+["入门","进阶","大师"][this.aiLevel==null?1:this.aiLevel], fn:()=>{ this.aiLevel=((this.aiLevel==null?1:this.aiLevel)+1)%3; }},
+      {label:"↩ 悔棋", fn:()=>{ if(!this.hist.length) return; this.restore(this.hist.pop()); if(this.vsAI&&this.turnOf()===this.aiColor&&this.hist.length) this.restore(this.hist.pop()); render(G); updStatus(); }},
       {label:"⟳ 重新开始", fn:()=>{ this.newGame(); render(G); updStatus(); }},
     ];},
     flipsFor(b,r,c,col){
@@ -819,6 +1267,10 @@ function ReversiGame(){
       if(this.over) return;
       const cell=W/8, c=Math.floor(x/cell), r=Math.floor(y/cell);
       if(r<0||r>7||c<0||c>7) return;
+      this.place(r,c);
+      render(G); updStatus();
+    },
+    place(r,c){
       const flips=this.flipsFor(this.st,r,c,this.turn);
       if(!flips) return;
       this.hist.push(this.snap());
@@ -826,8 +1278,112 @@ function ReversiGame(){
       this.st[r][c]=col;
       flips.forEach(([rr,cc])=>this.st[rr][cc]=col);
       this.last={r,c};
+      this.hintMove=null;
+      logPly(this.log, (col==="b"?"黑 ":"白 ")+CF[c]+(r+1)+" ("+flips.length+")");
+      sfx("move");
       this.advance(col);
-      render(G); updStatus();
+      if(this.over) sfx("win");
+    },
+    aiColor:"w", aiLevel:1,
+    turnOf(){ return this.turn; },
+    aiMove(){ const mv=this.think(); if(mv) this.place(mv.r, mv.c); },
+    think(){
+      const lvl=this.aiLevel==null?1:this.aiLevel;
+      if(lvl===0){
+        let best=null, bestS=-1;
+        for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+          const flips=this.flipsFor(this.st,r,c,this.turn);
+          if(!flips) continue;
+          const s=flips.length + Math.random()*2;
+          if(s>bestS){ bestS=s; best={r,c}; }
+        }
+        return best;
+      }
+      if(lvl===1){
+        const Wt=[[100,-25,12,6,6,12,-25,100],
+                  [-25,-45,2,2,2,2,-45,-25],
+                  [12,2,5,3,3,5,2,12],
+                  [6,2,3,1,1,3,2,6],
+                  [6,2,3,1,1,3,2,6],
+                  [12,2,5,3,3,5,2,12],
+                  [-25,-45,2,2,2,2,-45,-25],
+                  [100,-25,12,6,6,12,-25,100]];
+        let best=null, bestS=-1e9;
+        for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+          const flips=this.flipsFor(this.st,r,c,this.turn);
+          if(!flips) continue;
+          const s=Wt[r][c] + flips.length*3 + Math.random()*2;
+          if(s>bestS){ bestS=s; best={r,c}; }
+        }
+        return best;
+      }
+      // 大师:位置+行动力评估的深层搜索,残局精确算到底
+      let empt=0;
+      for(const row of this.st) for(const v of row) if(!v) empt++;
+      const maxD= empt<=9 ? empt : 3;
+      let best=null, bestS=-Infinity;
+      const moves=[];
+      for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+        const flips=this.flipsFor(this.st,r,c,this.turn);
+        if(flips) moves.push({r,c,flips});
+      }
+      for(const mv of moves){
+        const nb=this.st.map(row=>row.slice());
+        nb[mv.r][mv.c]=this.turn;
+        mv.flips.forEach(([rr,cc])=>nb[rr][cc]=this.turn);
+        const v=-this.rvNegamax(nb, this.turn==="b"?"w":"b", maxD-1, -Infinity, -bestS, 0);
+        if(v>bestS){ bestS=v; best=mv; }
+      }
+      return best;
+    },
+    rvEval(b, col){
+      const Wt=[[100,-25,12,6,6,12,-25,100],
+                [-25,-45,2,2,2,2,-45,-25],
+                [12,2,5,3,3,5,2,12],
+                [6,2,3,1,1,3,2,6],
+                [6,2,3,1,1,3,2,6],
+                [12,2,5,3,3,5,2,12],
+                [-25,-45,2,2,2,2,-45,-25],
+                [100,-25,12,6,6,12,-25,100]];
+      const op=col==="b"?"w":"b";
+      let s=0, mob=0, omob=0;
+      for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+        if(b[r][c]===col) s+=Wt[r][c];
+        else if(b[r][c]===op) s-=Wt[r][c];
+        else {
+          if(this.flipsFor(b,r,c,col)) mob++;
+          if(this.flipsFor(b,r,c,op)) omob++;
+        }
+      }
+      return s + (mob-omob)*9;
+    },
+    rvNegamax(b, col, depth, alpha, beta, passed){
+      const moves=[];
+      for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+        const flips=this.flipsFor(b,r,c,col);
+        if(flips) moves.push({r,c,flips});
+      }
+      const op=col==="b"?"w":"b";
+      if(!moves.length){
+        if(passed){
+          let d=0;
+          for(const row of b) for(const v of row){ if(v===col) d++; else if(v===op) d--; }
+          return d*1000;
+        }
+        return -this.rvNegamax(b, op, depth, -beta, -alpha, 1);
+      }
+      if(depth<=0) return this.rvEval(b, col);
+      let best=-Infinity;
+      for(const mv of moves){
+        const nb=b.map(row=>row.slice());
+        nb[mv.r][mv.c]=col;
+        mv.flips.forEach(([rr,cc])=>nb[rr][cc]=col);
+        const v=-this.rvNegamax(nb, op, depth-1, -beta, -alpha, 0);
+        if(v>best) best=v;
+        if(v>alpha) alpha=v;
+        if(alpha>=beta) break;
+      }
+      return best;
     },
     advance(col){
       const opp=col==="b"?"w":"b";
@@ -881,6 +1437,10 @@ function ReversiGame(){
         c.beginPath(); c.arc(x,y,rad,0,Math.PI*2); c.fill();
         c.strokeStyle=p==="b"?"#000":"rgba(70,65,50,.6)"; c.lineWidth=1; c.stroke();
       }
+      if(this.hintMove){
+        c.strokeStyle="rgba(255,200,60,.95)"; c.lineWidth=cell*0.07;
+        c.beginPath(); c.arc(this.hintMove.c*cell+cell/2, this.hintMove.r*cell+cell/2, cell*0.48,0,Math.PI*2); c.stroke();
+      }
     }
   };
   G.newGame(); G.hist=[];
@@ -890,6 +1450,11 @@ function ReversiGame(){
 /* ============================== 框架 ============================== */
 const games=[ChessGame(), XiangGame(), GomokuGame(), GoGame(), ReversiGame()];
 let current=games[0];
+loadAll();
+try{
+  const ti=parseInt(localStorage.getItem("qile_tab"),10);
+  if(ti>=0&&ti<games.length&&games[ti]) current=games[ti];
+}catch(e){}
 
 function updStatus(){
   const bar=$("#statusbar"), el=$("#status");
@@ -902,6 +1467,80 @@ function updStatus(){
     d.style.background=dc; d.style.color=dc; d.style.border="1px solid rgba(0,0,0,.4)";
     bar.insertBefore(d, el);
   }
+  renderLog();
+  maybeAI();
+}
+/* ---------- 本地存档 ---------- */
+function serializeGame(g){
+  try{ return JSON.stringify({hist:g.hist||[], cur:g.snap(), vsAI:!!g.vsAI, aiLevel:g.aiLevel}); }catch(e){ return null; }
+}
+function deserializeGame(g, s){
+  try{
+    const o=JSON.parse(s); if(!o||!o.cur) return false;
+    g.newGame();
+    g.hist=o.hist||[];
+    g.restore(o.cur);
+    g.vsAI=!!o.vsAI; g.aiLevel=o.aiLevel;
+    g.sel=null; g.legal=null; g.pending=null; g.hintMove=null;
+    return true;
+  }catch(e){ return false; }
+}
+function saveAll(){
+  try{ games.forEach(g=>localStorage.setItem("qile_"+g.id, serializeGame(g))); }catch(e){}
+}
+function loadAll(){
+  try{ games.forEach(g=>{ const s=localStorage.getItem("qile_"+g.id); if(s) deserializeGame(g,s); }); }catch(e){}
+}
+window.addEventListener("beforeunload", saveAll);
+function doHint(){
+  if(current.over||!current.think){ return; }
+  const mv=current.think();
+  if(!mv){ flashStatus("没有可用的建议"); return; }
+  current.hintMove=mv;
+  render(current);
+}
+/* ---------- 音效(WebAudio 合成,无外部文件) ---------- */
+let audioCtx=null, muted=false;
+try{ muted=localStorage.getItem("qile_mute")==="1"; }catch(e){}
+function sfx(type){
+  if(muted) return;
+  try{
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==="suspended") audioCtx.resume();
+    const t=audioCtx.currentTime;
+    const tone=(freq,dur,wave,vol,delay)=>{
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.type=wave||"sine"; o.frequency.value=freq;
+      g.gain.setValueAtTime(vol||.15, t+(delay||0));
+      g.gain.exponentialRampToValueAtTime(.001, t+(delay||0)+dur);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t+(delay||0)); o.stop(t+(delay||0)+dur+.02);
+    };
+    if(type==="move") tone(330,.07,"triangle",.22);
+    else if(type==="capture"){ tone(170,.1,"square",.1); tone(95,.16,"sine",.22,.02); }
+    else if(type==="check") tone(880,.16,"sine",.12);
+    else if(type==="win"){ tone(523,.12,"triangle",.16); tone(659,.12,"triangle",.16,.13); tone(784,.22,"triangle",.16,.26); }
+  }catch(e){}
+}
+function toggleMute(){
+  muted=!muted;
+  try{ localStorage.setItem("qile_mute",muted?"1":"0"); }catch(e){}
+  const b=document.getElementById("mute");
+  if(b) b.textContent=muted?"🔇":"🔊";
+}
+let aiTimer=null;
+function maybeAI(){
+  if(!current.vsAI || current.over || !current.aiMove || !current.aiColor) return;
+  if(current.turnOf()!==current.aiColor) return;
+  if(current.aiBusy) return;
+  current.aiBusy=true;
+  if(aiTimer) clearTimeout(aiTimer);
+  $("#status").textContent="🤖 对手思考中…";
+  aiTimer=setTimeout(()=>{
+    current.aiBusy=false;
+    try{ current.aiMove(); }catch(err){ showErr(err); }
+    render(current); updStatus();
+  }, 380);
 }
 function buildTabs(){
   const nav=$("#tabs"); nav.innerHTML="";
@@ -911,6 +1550,7 @@ function buildTabs(){
     b.classList.toggle("on", g===current);
     b.onclick=()=>{
       if(current===g) return;
+      try{ localStorage.setItem("qile_tab", String(games.indexOf(g))); }catch(e){}
       current=g; buildTabs(); buildControls();
       $("#hint").textContent=g.hint;
       fitCanvas(g); render(g); updStatus();
@@ -920,7 +1560,13 @@ function buildTabs(){
 }
 function buildControls(){
   const box=$("#controls"); box.innerHTML="";
-  (current.controls()||[]).forEach(item=>{
+  const items=(current.controls()||[]).filter(it=>current.vsAI || !String(it.label).startsWith("⚡ AI:"));
+  items.push({label:"💡 提示:"+(current.hintOn?"开":"关"), fn:()=>{
+    current.hintOn=!current.hintOn;
+    if(current.hintOn) doHint();
+    else { current.hintMove=null; render(current); }
+  }});
+  items.forEach(item=>{
     const b=document.createElement("button");
     b.textContent=item.label;
     if(item.key) b.classList.toggle("on", current.id==="go"&&item.key===current.n);
@@ -939,12 +1585,15 @@ function showPromo(cb){
   });
   el.classList.remove("hidden");
 }
-canvas.addEventListener("pointerdown", onDown, false);
-canvas.addEventListener("touchstart", onDown, {passive:false});
-canvas.addEventListener("mousedown", onDown, false);
-canvas.addEventListener("pointerup", onUp, false);
-canvas.addEventListener("touchend", onUp, {passive:false});
-canvas.addEventListener("mouseup", onUp, false);
+if(window.PointerEvent){
+  canvas.addEventListener("pointerdown", onDown, false);
+  canvas.addEventListener("pointerup", onUp, false);
+}else{
+  canvas.addEventListener("touchstart", onDown, {passive:false});
+  canvas.addEventListener("touchend", onUp, {passive:false});
+  canvas.addEventListener("mousedown", onDown, false);
+  canvas.addEventListener("mouseup", onUp, false);
+}
 
 let lastDown=null, lastFire=0;
 function posOf(e){
@@ -956,7 +1605,12 @@ function posOf(e){
 function onDown(e){
   try{
     e.preventDefault();
+    if(current.vsAI && !current.over && current.turnOf && current.turnOf()===current.aiColor){
+      if(!current.aiBusy){ updStatus(); } // AI 未触发则重新触发,防止冻结
+      return;
+    }
     const p=posOf(e); lastDown=p; lastFire=Date.now();
+    current.hintMove=null;
     current.tapPx(p.x, p.y, p.rect.width, p.rect.height);
   }catch(err){ showErr(err); }
 }
@@ -979,8 +1633,21 @@ window.onerror = function(msg){ try{ $("#status").textContent = "脚本异常: "
 window.addEventListener("resize", ()=>{ fitCanvas(current); render(current); });
 
 $("#hint").textContent=current.hint;
+const muteBtn=document.getElementById("mute");
+if(muted&&muteBtn) muteBtn.textContent="🔇";
+if(muteBtn) muteBtn.onclick=toggleMute;
+const fsBtn=document.getElementById("fs");
+if(fsBtn) fsBtn.onclick=()=>{
+  try{
+    if(document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  }catch(e){}
+};
 buildTabs(); buildControls();
 fitCanvas(current); render(current); updStatus();
+if("serviceWorker" in navigator && location.protocol.indexOf("http")===0){
+  navigator.serviceWorker.register("./sw.js").catch(()=>{});
+}
 
 /* 测试钩子（供自动化规则校验，不影响使用） */
 window.__test={chessInit,chessApply,chessLegal,chessAllLegal,chessPseudo,attacked,findKing,
