@@ -16,7 +16,8 @@
    然后访问 `http://localhost:8787/`。
 
 ## 在线版
-[Oline Chess Site](https://qile-chess.app.workbuddy.host/)
+- [Oline Chess Site](https://qile-chess.app.workbuddy.host/)（WorkBuddy Sites 托管）
+- [GitHub Pages](https://baiqingyuan.github.io/Happy-Chess/)（启用 Pages 后从 main 分支根目录部署）
 
 ## 文件
 - `index.html` — 游戏全部内容（HTML / CSS / JS 全部内联）。
